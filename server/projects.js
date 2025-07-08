@@ -20,10 +20,60 @@ async function saveProjectConfig(config) {
   await fs.writeFile(configPath, JSON.stringify(config, null, 2), 'utf8');
 }
 
+// Resolve the actual file system path from an encoded project name
+async function resolveProjectPath(projectName) {
+  const projectDir = path.join(process.env.HOME, '.claude', 'projects', projectName);
+  
+  try {
+    // First try to read metadata.json which contains the actual path
+    const metadataPath = path.join(projectDir, 'metadata.json');
+    const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
+    return metadata.path || metadata.cwd;
+  } catch (e) {
+    // Fallback: intelligently decode the path
+    let testPath = projectName;
+    if (testPath.startsWith('-')) {
+      testPath = testPath.substring(1);
+    }
+    
+    // Try simple replacement first
+    const pathParts = testPath.split('-');
+    let actualPath = '/' + pathParts.join('/');
+    
+    // If the simple replacement doesn't work, try to find the correct path
+    // by testing combinations where some dashes might be part of directory names
+    if (!require('fs').existsSync(actualPath)) {
+      // Try different combinations of dash vs slash
+      for (let i = pathParts.length - 1; i >= 0; i--) {
+        let testParts = [...pathParts];
+        // Try joining some parts with dashes instead of slashes
+        for (let j = i; j < testParts.length - 1; j++) {
+          testParts[j] = testParts[j] + '-' + testParts[j + 1];
+          testParts.splice(j + 1, 1);
+          let testActualPath = '/' + testParts.join('/');
+          if (require('fs').existsSync(testActualPath)) {
+            actualPath = testActualPath;
+            break;
+          }
+        }
+        if (require('fs').existsSync(actualPath)) break;
+      }
+    }
+    
+    return actualPath;
+  }
+}
+
 // Generate better display name from path
 async function generateDisplayName(projectName) {
-  // Convert "-home-user-projects-myapp" to a readable format
-  let projectPath = projectName.replace(/-/g, '/');
+  // Use the proper path resolution
+  let projectPath;
+  try {
+    projectPath = await resolveProjectPath(projectName);
+  } catch (e) {
+    // Fallback to simple replacement if resolution fails
+    projectPath = projectName.replace(/-/g, '/');
+  }
   
   // Try to read package.json from the project path
   try {
@@ -72,7 +122,12 @@ async function getProjects() {
         // Get display name from config or generate one
         const customName = config[entry.name]?.displayName;
         const autoDisplayName = await generateDisplayName(entry.name);
-        const fullPath = entry.name.replace(/-/g, '/');
+        let fullPath;
+        try {
+          fullPath = await resolveProjectPath(entry.name);
+        } catch (e) {
+          fullPath = entry.name.replace(/-/g, '/');
+        }
         
         const project = {
           name: entry.name,
@@ -105,7 +160,12 @@ async function getProjects() {
   // Add manually configured projects that don't exist as folders yet
   for (const [projectName, projectConfig] of Object.entries(config)) {
     if (!existingProjects.has(projectName) && projectConfig.manuallyAdded) {
-      const fullPath = projectName.replace(/-/g, '/');
+      let fullPath;
+      try {
+        fullPath = await resolveProjectPath(projectName);
+      } catch (e) {
+        fullPath = projectName.replace(/-/g, '/');
+      }
       
       const project = {
         name: projectName,
@@ -483,5 +543,6 @@ module.exports = {
   deleteProject,
   addProjectManually,
   loadProjectConfig,
-  saveProjectConfig
+  saveProjectConfig,
+  resolveProjectPath
 };

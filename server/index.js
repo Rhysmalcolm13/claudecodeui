@@ -28,9 +28,8 @@ const fs = require('fs').promises;
 const { spawn } = require('child_process');
 const os = require('os');
 const pty = require('node-pty');
-const fetch = require('node-fetch');
 
-const { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually } = require('./projects');
+const { getProjects, getSessions, getSessionMessages, renameProject, deleteSession, deleteProject, addProjectManually, resolveProjectPath } = require('./projects');
 const { spawnClaude, abortClaudeSession } = require('./claude-cli');
 const gitRoutes = require('./routes/git');
 
@@ -372,47 +371,13 @@ app.get('/api/projects/:projectName/files', async (req, res) => {
   try {
     
     const fs = require('fs').promises;
-    const projectPath = path.join(process.env.HOME, '.claude', 'projects', req.params.projectName);
     
-    // Try different methods to get the actual project path
-    let actualPath = projectPath;
-    
+    // Use the centralized resolveProjectPath function
+    let actualPath;
     try {
-      // First try to read metadata.json
-      const metadataPath = path.join(projectPath, 'metadata.json');
-      const metadata = JSON.parse(await fs.readFile(metadataPath, 'utf8'));
-      actualPath = metadata.path || metadata.cwd;
-    } catch (e) {
-      // Fallback: try to find the actual path by testing different dash interpretations
-      let testPath = req.params.projectName;
-      if (testPath.startsWith('-')) {
-        testPath = testPath.substring(1);
-      }
-      
-      // Try to intelligently decode the path by testing which directories exist
-      const pathParts = testPath.split('-');
-      actualPath = '/' + pathParts.join('/');
-      
-      // If the simple replacement doesn't work, try to find the correct path
-      // by testing combinations where some dashes might be part of directory names
-      if (!require('fs').existsSync(actualPath)) {
-        // Try different combinations of dash vs slash
-        for (let i = pathParts.length - 1; i >= 0; i--) {
-          let testParts = [...pathParts];
-          // Try joining some parts with dashes instead of slashes
-          for (let j = i; j < testParts.length - 1; j++) {
-            testParts[j] = testParts[j] + '-' + testParts[j + 1];
-            testParts.splice(j + 1, 1);
-            let testActualPath = '/' + testParts.join('/');
-            if (require('fs').existsSync(testActualPath)) {
-              actualPath = testActualPath;
-              break;
-            }
-          }
-          if (require('fs').existsSync(actualPath)) break;
-        }
-      }
-      
+      actualPath = await resolveProjectPath(req.params.projectName);
+    } catch (error) {
+      return res.status(404).json({ error: `Failed to resolve project path: ${error.message}` });
     }
     
     // Check if path exists
@@ -691,7 +656,6 @@ app.post('/api/transcribe', async (req, res) => {
         formData.append('language', 'en');
         
         // Make request to OpenAI
-        const fetch = require('node-fetch');
         const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
           method: 'POST',
           headers: {
