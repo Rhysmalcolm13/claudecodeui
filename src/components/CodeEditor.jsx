@@ -9,7 +9,7 @@ import { markdown } from '@codemirror/lang-markdown';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView, Decoration } from '@codemirror/view';
 import { StateField, StateEffect, RangeSetBuilder } from '@codemirror/state';
-import { X, Save, Download, Maximize2, Minimize2, Eye, EyeOff } from 'lucide-react';
+import { X, Save, Download, Maximize2, Minimize2, Eye, EyeOff, WrapText } from 'lucide-react';
 
 function CodeEditor({ file, onClose, projectPath }) {
   const [content, setContent] = useState('');
@@ -19,6 +19,7 @@ function CodeEditor({ file, onClose, projectPath }) {
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [showDiff, setShowDiff] = useState(!!file.diffInfo);
+  const [wordWrap, setWordWrap] = useState(false);
 
   // Create diff highlighting
   const diffEffect = StateEffect.define();
@@ -318,6 +319,14 @@ function CodeEditor({ file, onClose, projectPath }) {
             )}
             
             <button
+              onClick={() => setWordWrap(!wordWrap)}
+              className="p-2 md:p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
+              title={wordWrap ? "Disable word wrap" : "Enable word wrap"}
+            >
+              <WrapText className="w-5 h-5 md:w-4 md:h-4" />
+            </button>
+            
+            <button
               onClick={() => setIsDarkMode(!isDarkMode)}
               className="p-2 md:p-2 text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 min-w-[44px] min-h-[44px] md:min-w-0 md:min-h-0 flex items-center justify-center"
               title="Toggle theme"
@@ -384,7 +393,8 @@ function CodeEditor({ file, onClose, projectPath }) {
             extensions={[
               ...getLanguageExtension(file.name),
               diffField,
-              diffTheme
+              diffTheme,
+              wordWrap ? EditorView.lineWrapping : []
             ]}
             theme={isDarkMode ? oneDark : undefined}
             height="100%"
